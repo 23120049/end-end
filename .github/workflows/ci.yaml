@@ -1,0 +1,69 @@
+# Intended behaviours:
+# push to any branch  → build and publish a commit-SHA development image
+# pull request        → build and validate only
+# push to main        → build and publish the commit-SHA release-candidate image
+
+name: CI pipeline
+
+on: 
+    push: 
+        branches: 
+            - "**" 
+        paths:
+            - "site/**"
+            - "nginx/**"
+            - 'Dockerfile'
+            - '.dockerignore'
+            - ".github/workflows/ci.yaml"
+
+    pull_request:
+        branches: ["main"]
+        paths: 
+            - "site/**"
+            - "nginx/**"
+            - 'Dockerfile'
+            - '.dockerignore'
+            - ".github/workflows/ci.yaml"
+
+    workflow_dispatch:
+    
+jobs:
+    Build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out source
+              uses: actions/checkout@v6
+
+            - name: Set image build metadata
+              id: build_metadata
+              shell: bash
+              run: |
+                echo "release_version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+                echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+                echo "image_created_at=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_OUTPUT"
+
+            - name: Log in to the Container registry
+              if: github.event_name == 'push'
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build and push Docker images
+              uses: docker/build-push-action@v6
+              with: 
+                context: .
+                push: ${{ github.event_name == 'push' }}
+                no-cache: ${{ github.event_name == 'workflow_dispatch' }}
+                tags: |
+                  ghcr.io/23120049/nginx-server:${{ github.sha }}
+
+                build-args: |
+                  RELEASE_VERSION=${{ steps.build_metadata.outputs.release_version }}
+                  GIT_SHA=${{ steps.build_metadata.outputs.git_sha }}
+                  IMAGE_CREATED_AT=${{ steps.build_metadata.outputs.image_created_at }}
+    
+permissions:
+  contents: read
+  packages: write
