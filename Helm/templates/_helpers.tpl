@@ -29,8 +29,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 
 {{/* Labels used by the Deployment selector and Service selector. */}}
 {{- define "nginx-page.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "nginx-page.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+app: {{ include "nginx-page.name" . }}
 {{- end }}
 
 {{/* Chart name and version for labels. */}}
