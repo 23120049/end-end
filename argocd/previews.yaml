@@ -11,8 +11,11 @@ spec:
     - git:
         repoURL: https://github.com/23120049/end-end.git
         revision: main
+        requeueAfterSeconds: 30
         files:
           - path: Helm/previews/*.yaml
+  syncPolicy:
+    preserveResourcesOnDeletion: false
   template:
     metadata:
       name: 'nginx-page-pr-{{ .preview.prNumber }}'

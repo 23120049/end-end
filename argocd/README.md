@@ -13,4 +13,6 @@ The dev and staging Applications read their environment values from `Helm/`.
 
 The preview ApplicationSet creates one Application and namespace for every
 `Helm/previews/pr-<number>.yaml` file. Removing that file deletes the preview
-Application and its resources.
+Application, its workloads, and its managed namespace. The ApplicationSet polls
+Git every 30 seconds, so cleanup is asynchronous and may take a short time after
+the cleanup workflow finishes.

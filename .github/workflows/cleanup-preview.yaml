@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number whose preview should be cleaned up
+        description: "Pull request number whose preview should be cleaned up. Example: `1` "
         required: true
         type: string
 
@@ -22,7 +22,7 @@ jobs:
         with:
           ref: main
 
-      - name: Remove preview GitOps values
+      - name: Request preview cleanup through Argo CD
         shell: bash
         env:
           PR_NUMBER: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.pr_number }}
@@ -42,3 +42,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore(gitops): remove preview for PR $PR_NUMBER"
           git push origin HEAD:main
+          echo "Argo CD will remove nginx-page-pr-${PR_NUMBER} and namespace preview-pr-${PR_NUMBER}."
