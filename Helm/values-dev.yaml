@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: 23120049/nginx-page
   pullPolicy: IfNotPresent
-  tag: "93e140d1958a7bff66538d2c9ffd23a79b0d6d96"
+  tag: "1cd85ae1147ebde249d7de4095eb038a56f91687"
 
 imagePullSecrets: []
 nameOverride: ""
