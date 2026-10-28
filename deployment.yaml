@@ -14,8 +14,8 @@ spec:
     spec:
       containers:
         - name: nginx-page
-          image: 23120049/nginx-page:latest
-          imagePullPolicy: Always 
+          image: 23120049/nginx-page:a8d011b9549eaf10e697fae831b2dbeca15a7625
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
 

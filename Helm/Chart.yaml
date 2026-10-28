@@ -3,4 +3,3 @@ name: nginx-page
 description: A Helm chart for the versioned Nginx release page
 type: application
 version: 0.1.0
-appVersion: "latest"

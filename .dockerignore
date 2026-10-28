@@ -1,3 +1,9 @@
-.git
-.vs
-nginx/nginx.local.conf
+# Ignore every thing except these:
+
+**
+
+!Dockerfile
+!nginx/
+!nginx/**
+!site/
+!site/**

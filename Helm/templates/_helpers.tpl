@@ -21,8 +21,8 @@
 {{- define "nginx-page.labels" -}}
 helm.sh/chart: {{ include "nginx-page.chart" . }}
 {{ include "nginx-page.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- with .Values.image.tag }}
+app.kubernetes.io/version: {{ . | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}

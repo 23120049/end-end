@@ -1,69 +1,129 @@
-# Intended behaviours:
-# push to any branch  → build and publish a commit-SHA development image
-# pull request        → build and validate only
-# push to main        → build and publish the commit-SHA release-candidate image
+name: Validate and publish
 
-name: CI pipeline
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "nginx/**"
+      - "Helm/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/ci.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "nginx/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/ci.yaml"
 
-on: 
-    push: 
-        branches: 
-            - "**" 
-        paths:
-            - "site/**"
-            - "nginx/**"
-            - 'Dockerfile'
-            - '.dockerignore'
-            - ".github/workflows/ci.yaml"
-
-    pull_request:
-        branches: ["main"]
-        paths: 
-            - "site/**"
-            - "nginx/**"
-            - 'Dockerfile'
-            - '.dockerignore'
-            - ".github/workflows/ci.yaml"
-
-    workflow_dispatch:
-    
-jobs:
-    Build:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Check out source
-              uses: actions/checkout@v6
-
-            - name: Set image build metadata
-              id: build_metadata
-              shell: bash
-              run: |
-                echo "release_version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-                echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-                echo "image_created_at=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_OUTPUT"
-
-            - name: Log in to Docker Hub
-              if: github.event_name == 'push'
-              uses: docker/login-action@v3
-              with:
-                username: ${{ vars.DOCKERHUB_USERNAME }}
-                password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-            - name: Build and push Docker image
-              uses: docker/build-push-action@v6
-              with:
-                context: .
-                push: ${{ github.event_name == 'push' }}
-                no-cache: ${{ github.event_name == 'workflow_dispatch' }}
-                tags: |
-                  ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:${{ github.sha }}
-                  ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:latest
-
-                build-args: |
-                  RELEASE_VERSION=${{ steps.build_metadata.outputs.release_version }}
-                  GIT_SHA=${{ steps.build_metadata.outputs.git_sha }}
-                  IMAGE_CREATED_AT=${{ steps.build_metadata.outputs.image_created_at }}
-    
 permissions:
   contents: read
-  packages: write
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set image build metadata
+        if: github.event_name == 'pull_request'
+        id: metadata
+        shell: bash
+        run: |
+          echo "release_version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "image_created_at=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+
+      - name: Lint Helm chart
+        run: helm lint ./Helm
+
+      - name: Render development manifests
+        run: helm template nginx-page ./Helm --namespace dev -f Helm/values-dev.yaml
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'pull_request'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Verify Docker image builds
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          build-args: |
+            RELEASE_VERSION=${{ steps.metadata.outputs.release_version }}
+            GIT_SHA=${{ github.sha }}
+            IMAGE_CREATED_AT=${{ steps.metadata.outputs.image_created_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish-main:
+    name: Publish main and update dev
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set image build metadata
+        id: metadata
+        shell: bash
+        run: |
+          echo "release_version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "image_created_at=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Check whether the SHA image exists
+        id: image
+        shell: bash
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:${{ github.sha }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push SHA image
+        if: steps.image.outputs.exists != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:${{ github.sha }}
+          build-args: |
+            RELEASE_VERSION=${{ steps.metadata.outputs.release_version }}
+            GIT_SHA=${{ github.sha }}
+            IMAGE_CREATED_AT=${{ steps.metadata.outputs.image_created_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update development image tag
+        shell: bash
+        run: |
+          git pull --rebase origin main
+          sed -i -E 's|^  tag:.*$|  tag: "${{ github.sha }}"|' Helm/values-dev.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Helm/values-dev.yaml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore(gitops): deploy ${{ github.sha }} to dev [skip ci]"
+          git push origin HEAD:main

@@ -1,4 +1,3 @@
 # Developer-specific local Nginx launcher configuration
 nginx/nginx.local.conf
 .vs
-README.md

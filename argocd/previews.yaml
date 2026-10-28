@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nginx-page-previews
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: https://github.com/23120049/end-end.git
+        revision: main
+        files:
+          - path: Helm/previews/*.yaml
+  template:
+    metadata:
+      name: 'nginx-page-pr-{{ .preview.prNumber }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/23120049/end-end.git
+        targetRevision: main
+        path: Helm
+        helm:
+          valueFiles:
+            - 'previews/{{ .path.filename }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'preview-pr-{{ .preview.prNumber }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

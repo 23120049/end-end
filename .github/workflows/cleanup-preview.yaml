@@ -1,0 +1,44 @@
+name: Clean up preview
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number whose preview should be cleaned up
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Remove preview GitOps values
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "PR number must contain digits only"
+            exit 1
+          fi
+          git pull --rebase origin main
+          preview_file="Helm/previews/pr-${PR_NUMBER}.yaml"
+          if [[ ! -f "$preview_file" ]]; then
+            echo "No preview configuration exists for PR $PR_NUMBER"
+            exit 0
+          fi
+          git rm "$preview_file"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(gitops): remove preview for PR $PR_NUMBER"
+          git push origin HEAD:main
