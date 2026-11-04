@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["image", "service", "resources"],
+  "required": ["image", "service", "resources", "api"],
   "properties": {
     "replicaCount": { "type": "integer", "minimum": 1 },
     "image": {
@@ -28,11 +28,27 @@
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
       }
     },
-    "ingress": {
+    "ingressRoute": {
       "type": "object",
+      "required": ["enabled", "entryPoints", "hosts"],
       "properties": {
         "enabled": { "type": "boolean" },
-        "className": { "type": "string" }
+        "entryPoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "hosts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["host"],
+            "properties": {
+              "host": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
       }
     },
     "autoscaling": {
@@ -44,6 +60,22 @@
         "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
       }
     },
-    "resources": { "type": "object" }
+    "resources": { "type": "object" },
+    "api": {
+      "type": "object",
+      "required": ["enabled", "image", "resources"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+          }
+        },
+        "resources": { "type": "object" }
+      }
+    }
   }
 }

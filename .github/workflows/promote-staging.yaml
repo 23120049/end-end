@@ -57,6 +57,7 @@ jobs:
         run: |
           git pull --rebase origin main
           sed -i -E 's|^  tag:.*$|  tag: "${{ steps.release.outputs.sha }}"|' Helm/values-staging.yaml
+          sed -i '/^api:$/,/^[^ ]/ s|^  enabled: false$|  enabled: true|' Helm/values-staging.yaml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Helm/values-staging.yaml

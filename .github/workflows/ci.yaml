@@ -8,6 +8,7 @@ on:
       - "nginx/**"
       - "Helm/**"
       - "Dockerfile"
+      - "api/**"
       - ".dockerignore"
       - ".github/workflows/ci.yaml"
   push:
@@ -16,6 +17,7 @@ on:
       - "site/**"
       - "nginx/**"
       - "Dockerfile"
+      - "api/**"
       - ".dockerignore"
       - ".github/workflows/ci.yaml"
 
@@ -23,48 +25,76 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Validate
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v6
 
       - name: Set image build metadata
-        if: github.event_name == 'pull_request'
         id: metadata
         shell: bash
         run: |
           echo "release_version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "image_created_at=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
 
+      - name: Build web image
+        run: |
+          docker build -t nginx-page:ci --build-arg RELEASE_VERSION="${{ steps.metadata.outputs.release_version }}" --build-arg GIT_SHA="$GITHUB_SHA" --build-arg IMAGE_CREATED_AT="${{ steps.metadata.outputs.image_created_at }}" .
+
+      - name: Build API image
+        run: docker build -f api/Dockerfile -t release-api:ci .
+
+      - name: Install and test API
+        working-directory: api
+        run: |
+          npm ci
+          npm test
+
       - name: Lint Helm chart
-        run: helm lint ./Helm
+        run: |
+          helm lint ./Helm -f Helm/values-dev.yaml
+          helm lint ./Helm -f Helm/values-staging.yaml
 
-      - name: Render development manifests
-        run: helm template nginx-page ./Helm --namespace dev -f Helm/values-dev.yaml
+      - name: Smoke-test web image
+        run: |
+          docker run -d --name nginx-page-ci -p 127.0.0.1:8080:8080 nginx-page:ci
+          trap 'docker rm -f nginx-page-ci' EXIT
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:8080/health; then break; fi
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:8080/health)" = ok
+          curl -fsS http://127.0.0.1:8080/ | grep -F "$GITHUB_SHA"
 
-      - name: Set up Docker Buildx
-        if: github.event_name == 'pull_request'
-        uses: docker/setup-buildx-action@v4
+      - name: Smoke-test API image
+        run: |
+          docker run -d --name release-api-ci -p 127.0.0.1:3000:3000 release-api:ci
+          trap 'docker rm -f release-api-ci' EXIT
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:3000/api/health; then break; fi
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:3000/api/health)" = '{"status":"ok"}'
 
-      - name: Build Docker image
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v7
+      - name: Save tested images for publication
+        if: github.event_name == 'push'
+        run: docker save -o /tmp/images.tar nginx-page:ci release-api:ci
+
+      - name: Upload artifacts 
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
         with:
-          context: .
-          push: false
-          build-args: |
-            RELEASE_VERSION=${{ steps.metadata.outputs.release_version }}
-            GIT_SHA=${{ github.sha }}
-            IMAGE_CREATED_AT=${{ steps.metadata.outputs.image_created_at }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: container-images
+          path: /tmp/images.tar
+          compression-level: 0
+          retention-days: 1
 
   publish-main:
     name: Publish main and update dev
     if: github.event_name == 'push'
-    needs: validate
+    needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -72,12 +102,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Set image build metadata
-        id: metadata
-        shell: bash
-        run: |
-          echo "release_version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          echo "image_created_at=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+      - name: Download tested images
+        uses: actions/download-artifact@v4
+        with:
+          name: container-images
+          path: /tmp
+
+      - name: Load tested images
+        run: docker load -i /tmp/images.tar
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
@@ -100,19 +132,32 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push SHA image
+      - name: Push tested web image to Dockerhub 
         if: steps.image.outputs.exists != 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:${{ github.sha }}
-          build-args: |
-            RELEASE_VERSION=${{ steps.metadata.outputs.release_version }}
-            GIT_SHA=${{ github.sha }}
-            IMAGE_CREATED_AT=${{ steps.metadata.outputs.image_created_at }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:${{ github.sha }}
+        run: |
+          docker tag nginx-page:ci "$IMAGE"
+          docker push "$IMAGE"
+
+      - name: Check whether API SHA image exists
+        id: api-image
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/release-api:${{ github.sha }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push tested API image to Dockerhub 
+        if: steps.api-image.outputs.exists != 'true'
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/release-api:${{ github.sha }}
+        run: |
+          docker tag release-api:ci "$IMAGE"
+          docker push "$IMAGE"
 
       - name: Update development image tag
         shell: bash

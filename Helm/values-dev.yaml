@@ -1,4 +1,4 @@
-replicaCount: 1
+replicaCount: 2
 
 image:
   repository: 23120049/nginx-page
@@ -28,16 +28,11 @@ service:
   port: 80
   annotations: {}
 
-ingress:
-  enabled: false
-  className: ""
-  annotations: {}
+ingressRoute:
+  enabled: true
+  entryPoints: [web]
   hosts:
     - host: nginx-page.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
 
 resources:
   requests:
@@ -68,3 +63,16 @@ autoscaling:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+api:
+  enabled: true
+  image:
+    repository: 23120049/release-api
+    tag: "b8529cf5b15d2bf57dbabffbb548688a3862f919"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi

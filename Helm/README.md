@@ -1,50 +1,53 @@
 # nginx-page Helm chart
 
-This chart deploys the Nginx release page with a `ClusterIP` Service, health
-probes, resource requests/limits, and optional Ingress, HPA, ServiceAccount,
-image-pull secrets, and scheduling configuration.
+This chart deploys the Nginx release page and private Node.js API with
+`ClusterIP` Services, health probes, resource requests/limits, a ConfigMap
+mounted into Nginx, and default-deny NetworkPolicies. Development uses two web
+replicas and a Traefik IngressRoute at `nginx-page.local`; staging uses
+`staging.nginx-page.local`.
 
-## Validate and install
+The cluster must have Traefik's `IngressRoute` CRD and Kubernetes CRD provider
+enabled before Argo CD synchronizes this chart. Check with
+`kubectl get crd ingressroutes.traefik.io`. Argo CD's pruning removes the old
+standard Ingress after the new chart is committed and synchronized.
+
+## Validate and deploy
 
 ```bash
 helm lint ./Helm
-helm template nginx-page ./Helm
-helm upgrade --install nginx-page ./Helm --namespace default
+helm template nginx-page ./Helm --namespace dev -f Helm/values-dev.yaml
 ```
 
 If you previously applied the root `deployment.yaml`, delete those legacy
-resources before the first Helm installation. Helm must own the resources it
-manages, and a Deployment selector cannot be changed in place:
+resources before the first Argo CD sync. The old Deployment selector cannot
+be changed in place:
 
 ```bash
 kubectl delete -f deployment.yaml
-helm upgrade --install nginx-page ./Helm --namespace default
+kubectl apply -f argocd/dev.yaml
 ```
 
-For a Docker Hub image, set the repository and immutable tag at deployment
-time rather than editing templates:
+Argo CD owns application deployment. To change a release, commit the same
+immutable SHA for the web and API image tags in the environment values file:
 
-```bash
-helm upgrade --install nginx-page ./Helm \
-  --set image.repository=YOUR_DOCKERHUB_USERNAME/nginx-server \
-  --set image.tag=COMMIT_SHA
+```yaml
+image:
+  tag: COMMIT_SHA
+api:
+  image:
+    tag: COMMIT_SHA
 ```
 
 The chart defaults to `ClusterIP`. For local access, run:
 
 ```bash
-kubectl port-forward service/nginx-page-nginx-page 8080:80
+kubectl -n dev port-forward service/nginx-page 8080:80
 ```
 
-To enable K3s Traefik Ingress, provide an override file such as:
+Development and staging values enable Traefik IngressRoute on the `web` entry
+point. Its `nativeLB` setting routes through the web Service ClusterIP. To test the route from
+outside the cluster, use a reachable node IP and the configured host header:
 
-```yaml
-ingress:
-  enabled: true
-  className: traefik
-  hosts:
-    - host: nginx-page.local
-      paths:
-        - path: /
-          pathType: Prefix
+```bash
+curl -H 'Host: nginx-page.local' http://NODE_IP/
 ```

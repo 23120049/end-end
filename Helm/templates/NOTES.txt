@@ -4,6 +4,6 @@
 
 Then visit http://localhost:8080.
 
-{{- if .Values.ingress.enabled }}
-The Ingress hostname is {{ (index .Values.ingress.hosts 0).host }}.
+{{- if .Values.ingressRoute.enabled }}
+The IngressRoute hostname is {{ (index .Values.ingressRoute.hosts 0).host }}.
 {{- end }}
