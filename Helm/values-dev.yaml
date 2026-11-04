@@ -3,7 +3,7 @@ replicaCount: 2
 image:
   repository: 23120049/nginx-page
   pullPolicy: IfNotPresent
-  tag: "b51320cc8a90a16fba5239b3f5bc44e7651e81ef"
+  tag: "e78e6d482a9ff7342c9c7a65b5db1f758674c602"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -68,7 +68,7 @@ api:
   enabled: true
   image:
     repository: 23120049/release-api
-    tag: "b8529cf5b15d2bf57dbabffbb548688a3862f919"
+    tag: "e78e6d482a9ff7342c9c7a65b5db1f758674c602"
   resources:
     requests:
       cpu: 10m
