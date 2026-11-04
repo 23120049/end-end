@@ -51,12 +51,19 @@ jobs:
           IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/nginx-page:${{ steps.release.outputs.sha }}
         run: docker buildx imagetools inspect "$IMAGE" >/dev/null
 
-      - name: Update staging image tag
+      - name: Verify release API image exists
+        shell: bash
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/release-api:${{ steps.release.outputs.sha }}
+        run: docker buildx imagetools inspect "$IMAGE" >/dev/null
+
+      - name: Update staging web and API image tags
         shell: bash
         working-directory: config
         run: |
           git pull --rebase origin main
           sed -i -E 's|^  tag:.*$|  tag: "${{ steps.release.outputs.sha }}"|' Helm/values-staging.yaml
+          sed -i -E 's|^    tag:.*$|    tag: "${{ steps.release.outputs.sha }}"|' Helm/values-staging.yaml
           sed -i '/^api:$/,/^[^ ]/ s|^  enabled: false$|  enabled: true|' Helm/values-staging.yaml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -96,6 +96,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Check whether preview API image exists
+        id: api-image
+        shell: bash
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/release-api:${{ steps.pr.outputs.sha }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push preview API image
         if: steps.api-image.outputs.exists != 'true'
         uses: docker/build-push-action@v7
@@ -113,6 +125,7 @@ jobs:
           mkdir -p Helm/previews
           cp Helm/values.yaml "Helm/previews/pr-${{ inputs.pr_number }}.yaml"
           sed -i -E 's|^  tag:.*$|  tag: "${{ steps.pr.outputs.sha }}"|' "Helm/previews/pr-${{ inputs.pr_number }}.yaml"
+          sed -i -E 's|^    tag:.*$|    tag: "${{ steps.pr.outputs.sha }}"|' "Helm/previews/pr-${{ inputs.pr_number }}.yaml"
           sed -i -E '/^namespace:$/,/^[^ ]/ s|^  create: false$|  create: true|' "Helm/previews/pr-${{ inputs.pr_number }}.yaml"
           printf '\npreview:\n  prNumber: "%s"\n' "${{ inputs.pr_number }}" >> "Helm/previews/pr-${{ inputs.pr_number }}.yaml"
           git config user.name "github-actions[bot]"

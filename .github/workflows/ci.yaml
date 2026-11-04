@@ -159,11 +159,12 @@ jobs:
           docker tag release-api:ci "$IMAGE"
           docker push "$IMAGE"
 
-      - name: Update development image tag
+      - name: Update development web and API image tags
         shell: bash
         run: |
           git pull --rebase origin main
           sed -i -E 's|^  tag:.*$|  tag: "${{ github.sha }}"|' Helm/values-dev.yaml
+          sed -i -E 's|^    tag:.*$|    tag: "${{ github.sha }}"|' Helm/values-dev.yaml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Helm/values-dev.yaml
